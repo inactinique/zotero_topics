@@ -1,0 +1,10 @@
+Metadata-Version: 2.1
+Name: zotero_topic_modeling
+Version: 0.1
+Requires-Dist: pyzotero
+Requires-Dist: PyPDF2
+Requires-Dist: gensim
+Requires-Dist: nltk
+Requires-Dist: matplotlib
+Requires-Dist: numpy
+Requires-Dist: requests

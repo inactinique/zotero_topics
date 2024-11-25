@@ -1,0 +1,7 @@
+pyzotero
+PyPDF2
+gensim
+nltk
+matplotlib
+numpy
+requests
