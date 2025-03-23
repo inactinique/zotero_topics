@@ -6,7 +6,6 @@ nltk==3.8.1
 matplotlib==3.8.2
 numpy==1.26.2
 requests==2.31.0
-pandas==2.0.3
 
 # RAG dependencies
 sentence-transformers==2.2.2

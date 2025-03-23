@@ -13,7 +13,14 @@ zotero_topic_modeling/
 ├── ui/
 │   ├── __init__.py
 │   ├── app.py
-│   └── components.py
-└── utils/
+│   ├── components.py
+│   └── chat_window.py
+├── utils/
+│   ├── __init__.py
+│   └── zotero_client.py
+└── rag/
     ├── __init__.py
-    └── zotero_client.py
+    ├── chunk_processor.py
+    ├── embedder.py
+    ├── generator.py
+    └── rag_manager.py

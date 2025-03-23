@@ -7,13 +7,12 @@ setup(
     install_requires=[
         'pyzotero',
         'pdfminer.six',
-        'gensim',
+        'gensim<4.3.2',  # Use older version to avoid scipy dependency issues
         'nltk',
         'matplotlib',
-        'numpy',
+        'numpy<1.25.0',  # Avoid newer versions that may have compatibility issues
         'requests',
         'pandas',
-        'sentence-transformers',
-        'faiss-cpu',
+        'scikit-learn',
     ],
 )

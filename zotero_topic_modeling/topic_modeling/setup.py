@@ -12,7 +12,6 @@ setup(
         'matplotlib',
         'numpy',
         'requests',
-        'pandas',
         'sentence-transformers',
         'faiss-cpu',
     ],

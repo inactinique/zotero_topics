@@ -1,16 +1,15 @@
 # Core dependencies
 pyzotero==1.5.1
 pdfminer.six==20221105
-gensim==4.3.2
+gensim==4.3.1
 nltk==3.8.1
 matplotlib==3.8.2
-numpy==1.26.2
+numpy==1.24.3
 requests==2.31.0
 pandas==2.0.3
 
-# RAG dependencies
-sentence-transformers==2.2.2
-faiss-cpu==1.7.4
+# RAG dependencies - simplified
+scikit-learn==1.2.2
 
 # UI dependencies
 tk==0.1.0  # Usually comes with Python, version may vary

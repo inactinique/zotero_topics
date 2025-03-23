@@ -2,24 +2,28 @@
 
 ## Prerequisites
 
-1. Python 3.12 or higher
+1. Python 3.10 or higher
 2. pip (Python package installer)
 3. A Zotero account with API access enabled
+4. Anthropic account with API
 
 ## Step by step installation
 
 1. **Create and activate a virtual environment** (recommended)
    ```bash
-   # Create a new virtual environment
-   python -m venv zotero_topics_env
+   # Install miniconda if you don't have it already
+   # Create a new environment with all dependencies
+   conda create -n zotero-rag-new python=3.10
+   conda activate zotero-rag-new
    
-   # Activate the virtual environment
-   # On Windows:
-   zotero_topics_env\Scripts\activate
-   # On macOS/Linux:
-   source zotero_topics_env/bin/activate
+   # Install core scientific packages via conda
+   conda install -c conda-forge scipy numpy pandas matplotlib faiss-cpu
+   conda install -c conda-forge gensim nltk
+   
+   # Install remaining packages via pip
+   pip install pyzotero pdfminer.six requests sentence-transformers
    ```
-
+   
 2. **Clone or download the repository**
    ```bash
    git clone [repository-url]
@@ -83,6 +87,11 @@
    - Run the NLTK downloads again
    - Check your NLTK data directory (typically in your home folder)
 
+## Features
+
+- Topic modeling with visualization
+- [Speak with your PDFs](SPEAK_WITH_PDFS.md) - Ask questions about your documents
+
 ## System Requirements
 
 - Operating System: Windows 10+, macOS 10.14+, or Linux
@@ -93,3 +102,4 @@
 ## Support
 
 For issues or questions, please open an issue in the GitHub repository.
+

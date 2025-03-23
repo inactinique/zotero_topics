@@ -1,22 +1,21 @@
 import tkinter as tk
 from tkinter import ttk, messagebox
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-from matplotlib.figure import Figure
 import logging
 import os
 
 from zotero_topic_modeling.utils.zotero_client import ZoteroClient
 from zotero_topic_modeling.utils.config_manager import ConfigManager
 from zotero_topic_modeling.ui.components import TopicModelingThread
-from zotero_topic_modeling.topic_modeling.visualizer import TopicVisualizer
 from zotero_topic_modeling.ui.theme import DarkTheme
 from zotero_topic_modeling.utils.language_config import LanguageManager
+from zotero_topic_modeling.ui.chat_window import ChatWindow
+from zotero_topic_modeling.pdf_processor.extractor import PDFExtractor
 
 class ZoteroTopicModelingApp:
     def __init__(self, root):
         self.root = root
         self.root.title("Zotero Topic Modeling")
-        self.root.geometry("1000x800")
+        self.root.geometry("1000x600")  # Reduced height since we're removing visualization
         
         # Initialize variables before creating UI
         self.init_variables()
@@ -37,24 +36,15 @@ class ZoteroTopicModelingApp:
         self.language_manager = LanguageManager()
         self.zotero_client = None
         self.collections = None
-        self.items = None  # Add this line to store collection items
-        self.current_collection = None  # Add this to store current collection info
+        self.items = None  # Store collection items
+        self.current_collection = None  # Store current collection info
+        self.chat_window = None  # Will store chat window reference
         
         # Setup UI after variables are initialized
         self.setup_ui()
         self.load_saved_credentials()
         
         logging.info("Application initialized")
-
-    def init_variables(self):
-        """Initialize all tkinter variables"""
-        self.library_id_var = tk.StringVar()
-        self.api_key_var = tk.StringVar()
-        self.save_credentials_var = tk.BooleanVar(value=True)
-        self.status_var = tk.StringVar()
-        self.progress_var = tk.DoubleVar()
-        self.language_var = tk.StringVar(value="English")  # Default language
-        self.num_topics_var = tk.IntVar(value=5)  # Default number of topics
 
     def init_variables(self):
         """Initialize all tkinter variables"""
@@ -144,11 +134,21 @@ class ZoteroTopicModelingApp:
         )
         topics_spinbox.grid(row=0, column=3, padx=5)
 
+        # Buttons frame for process and chat
+        action_frame = ttk.Frame(collection_frame)
+        action_frame.grid(row=2, column=0, columnspan=2, pady=10)
+        
         # Process button
-        self.process_button = ttk.Button(collection_frame, text="Process Selected Collection", 
+        self.process_button = ttk.Button(action_frame, text="Process Selected Collection", 
                                        command=self.process_pdfs,
                                        state='disabled')
-        self.process_button.grid(row=2, column=0, columnspan=2, pady=10)
+        self.process_button.pack(side=tk.LEFT, padx=5)
+        
+        # Chat button
+        self.chat_button = ttk.Button(action_frame, text="Speak with your PDFs", 
+                                    command=self.open_chat_window,
+                                    state='disabled')
+        self.chat_button.pack(side=tk.LEFT, padx=5)
         
         # Progress frame
         progress_frame = ttk.LabelFrame(self.main_frame, text="Progress", padding="5")
@@ -165,19 +165,8 @@ class ZoteroTopicModelingApp:
                                           mode='determinate')
         self.progress_bar.grid(row=1, column=0, sticky=(tk.W, tk.E), pady=5)
         
-        # Visualization frame
-        self.viz_frame = ttk.LabelFrame(self.main_frame, text="Topic Visualization", padding="5")
-        self.viz_frame.grid(row=3, column=0, columnspan=3, sticky=(tk.W, tk.E, tk.N, tk.S), pady=5)
-        self.viz_frame.rowconfigure(0, weight=1)
-        self.viz_frame.columnconfigure(0, weight=1)
-        
-        # Matplotlib figure
-        self.figure = Figure(figsize=(10, 6), facecolor=self.colors['bg'])
-        self.canvas = FigureCanvasTkAgg(self.figure, master=self.viz_frame)
-        self.canvas.get_tk_widget().grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
-        
         # Configure main frame row weights
-        self.main_frame.rowconfigure(3, weight=1)  # Make visualization frame expandable
+        self.main_frame.rowconfigure(1, weight=1)  # Make collection frame expandable
         
         # Bind tree selection event
         self.collection_tree.bind('<<TreeviewSelect>>', self.on_collection_select)
@@ -199,6 +188,7 @@ class ZoteroTopicModelingApp:
             # Reset UI state
             self.collection_tree.delete(*self.collection_tree.get_children())
             self.process_button['state'] = 'disabled'
+            self.chat_button['state'] = 'disabled'
             
             # Clear collections
             self.collections = None
@@ -206,7 +196,6 @@ class ZoteroTopicModelingApp:
 
             # Clear items
             self.clear_items()
-
             
             logging.info("Credentials cleared successfully")
             messagebox.showinfo("Success", "Saved credentials have been cleared")
@@ -364,6 +353,7 @@ class ZoteroTopicModelingApp:
             
             # Disable UI elements
             self.process_button['state'] = 'disabled'
+            self.chat_button['state'] = 'disabled'
             self.collection_tree.unbind('<<TreeviewSelect>>')
             
             # Start processing thread
@@ -390,7 +380,6 @@ class ZoteroTopicModelingApp:
             self.process_button['state'] = 'normal'
             self.collection_tree.bind('<<TreeviewSelect>>', self.on_collection_select)
 
-
     def on_processing_complete(self, lda_model, dictionary, corpus, texts, titles, failed_titles, error=None):
         """Handle completion of PDF processing and topic modeling"""
         if error:
@@ -402,21 +391,10 @@ class ZoteroTopicModelingApp:
             
         # Re-enable UI elements
         self.process_button['state'] = 'normal'
+        self.chat_button['state'] = 'normal'  # Enable chat button after processing
         self.collection_tree.bind('<<TreeviewSelect>>', self.on_collection_select)
         
         try:
-            # Show results window
-            from zotero_topic_modeling.ui.results_window import TopicModelingResults
-            results_window = TopicModelingResults(
-                self.root,
-                lda_model,
-                dictionary,
-                corpus,
-                titles,
-                self.items,  # Pass the original Zotero items
-                self.colors
-            )
-            
             # Show summary
             summary = (f"Successfully processed {len(texts)} documents:\n"
                       f"- Found {len(dictionary)} unique terms\n"
@@ -428,5 +406,68 @@ class ZoteroTopicModelingApp:
             messagebox.showinfo("Processing Complete", summary)
             
         except Exception as e:
-            logging.error(f"Error creating results visualization: {str(e)}")
-            messagebox.showerror("Error", f"Error creating visualization: {str(e)}")
+            logging.error(f"Error in processing completion: {str(e)}")
+            messagebox.showerror("Error", f"Error: {str(e)}")
+
+    def open_chat_window(self):
+        """Open the chat window for RAG-based conversation with PDFs"""
+        if not hasattr(self, 'items') or not self.items:
+            messagebox.showwarning("Warning", "Please process a collection first")
+            return
+            
+        try:
+            # Convert processed PDFs into the format needed for RAG
+            documents = []
+            for i, item in enumerate(self.items):
+                title = item.get('data', {}).get('title', f'Document {i+1}')
+                # Get PDF content
+                pdf_content = self.zotero_client.get_item_pdfs(item)
+                if pdf_content:
+                    # Extract text
+                    text = PDFExtractor.extract_text_from_pdf(pdf_content)
+                    
+                    if text and PDFExtractor.is_valid_text(text):
+                        # Get metadata
+                        data = item.get('data', {})
+                        year = data.get('date', '')[:4] if data.get('date') else ''
+                        
+                        # Get authors
+                        authors = []
+                        creators = data.get('creators', [])
+                        for creator in creators:
+                            if creator.get('creatorType') == 'author':
+                                first_name = creator.get('firstName', '')
+                                last_name = creator.get('lastName', '')
+                                if first_name and last_name:
+                                    authors.append(f"{first_name} {last_name}")
+                                elif last_name:
+                                    authors.append(last_name)
+                        
+                        # Add document
+                        documents.append({
+                            'id': item.get('key', ''),
+                            'title': title,
+                            'text': text,
+                            'authors': authors,
+                            'year': year,
+                            'source': 'Zotero Library'
+                        })
+            
+            if not documents:
+                messagebox.showwarning("Warning", "No valid PDF content found in the processed collection")
+                return
+                
+            # Show informational message
+            messagebox.showinfo("Chat Window", 
+                              "Opening chat window. The system will first process your documents, "
+                              "which may take a few moments depending on the number and size of PDFs.")
+            
+            # Try to get API key from environment
+            api_key = os.environ.get("ANTHROPIC_API_KEY")
+            
+            # Open the chat window
+            self.chat_window = ChatWindow(self.root, documents, api_key=api_key, theme_colors=self.colors)
+            
+        except Exception as e:
+            logging.error(f"Error opening chat window: {str(e)}")
+            messagebox.showerror("Error", f"Error opening chat window: {str(e)}")
