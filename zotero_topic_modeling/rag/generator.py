@@ -5,24 +5,33 @@ import json
 import os
 from pathlib import Path
 import re
+import time
 
 class ResponseGenerator:
     """
     Generates responses to user questions based on retrieved document chunks.
-    This is a simplified version that can work without external LLM APIs.
+    Supports both Anthropic API and local Ollama models.
     """
     
-    def __init__(self, api_key: Optional[str] = None, model: str = "claude-3-haiku-20240307"):
+    def __init__(self, api_key: Optional[str] = None, model: str = "claude-3-haiku-20240307", 
+                 use_ollama: bool = False, ollama_model: str = "llama3.2:3b", 
+                 ollama_url: str = "http://localhost:11434"):
         """
         Initialize response generator.
         
         Args:
-            api_key: API key for the language model service (can be None if using local models)
-            model: Model identifier to use
+            api_key: API key for the Anthropic API (can be None if using Ollama)
+            model: Model identifier to use with Anthropic API
+            use_ollama: Whether to use Ollama instead of Anthropic API
+            ollama_model: Model to use with Ollama
+            ollama_url: URL for the Ollama API
         """
         self.api_key = api_key or os.environ.get("ANTHROPIC_API_KEY")
         self.model = model
-        self.api_url = "https://api.anthropic.com/v1/messages"
+        self.use_ollama = use_ollama
+        self.ollama_model = ollama_model
+        self.ollama_url = ollama_url
+        self.anthropic_api_url = "https://api.anthropic.com/v1/messages"
         
         # Create a default system prompt
         self.system_prompt = (
@@ -32,7 +41,10 @@ class ResponseGenerator:
             "When appropriate, cite the specific documents you're drawing information from."
         )
         
-        logging.info(f"Initialized ResponseGenerator with model: {model}")
+        if use_ollama:
+            logging.info(f"Initialized ResponseGenerator with Ollama model: {ollama_model}")
+        else:
+            logging.info(f"Initialized ResponseGenerator with Anthropic model: {model}")
     
     def generate_response(self, query: str, chunks: List[Dict[str, Any]]) -> str:
         """
@@ -49,9 +61,11 @@ class ResponseGenerator:
             # Create context from chunks
             context = self._create_context_from_chunks(chunks)
             
-            # Check if we have an API key for external services
-            if self.api_key:
-                return self._generate_with_api(query, context)
+            # Check which model to use
+            if self.use_ollama:
+                return self._generate_with_ollama(query, context)
+            elif self.api_key:
+                return self._generate_with_anthropic(query, context)
             else:
                 return self._generate_fallback(query, context)
                 
@@ -89,7 +103,7 @@ class ResponseGenerator:
             
         return "\n\n".join(formatted_chunks)
     
-    def _generate_with_api(self, query: str, context: str) -> str:
+    def _generate_with_anthropic(self, query: str, context: str) -> str:
         """
         Generate a response using the Anthropic Claude API.
         
@@ -128,20 +142,13 @@ Please provide a detailed answer based solely on the information in the context.
                 ]
             }
             
-            # Log request details for debugging (excluding API key)
-            logging.info(f"Making API request to: {self.api_url}")
-            logging.info(f"Using model: {self.model}")
-            
             # Make the API request
-            response = requests.post(self.api_url, headers=headers, data=json.dumps(data), timeout=30)
-            
-            # Log the response status
-            logging.info(f"API response status: {response.status_code}")
+            response = requests.post(self.anthropic_api_url, headers=headers, json=data, timeout=30)
             
             # Check for errors
             if response.status_code != 200:
                 logging.error(f"API error: {response.status_code} {response.text}")
-                return f"Error from API: {response.status_code}. Falling back to basic response generation."
+                return f"Error from Anthropic API: {response.status_code}. Falling back to basic response generation."
             
             # Extract the generated text
             result = response.json()
@@ -162,10 +169,122 @@ Please provide a detailed answer based solely on the information in the context.
             logging.error(f"Error in API response generation: {str(e)}")
             return self._generate_fallback(query, context)
     
+    def _generate_with_ollama(self, query: str, context: str) -> str:
+        """
+        Generate a response using a local Ollama model.
+        
+        Args:
+            query: User's question
+            context: Context information from chunks
+            
+        Returns:
+            Generated response
+        """
+        try:
+            # Limit context size to avoid timeouts
+            max_context_chars = 10000
+            if len(context) > max_context_chars:
+                # Keep the first part explaining what documents are
+                intro_parts = context.split("\n\n", 2)
+                if len(intro_parts) > 2:
+                    intro = intro_parts[0] + "\n\n" + intro_parts[1] + "\n\n"
+                else:
+                    intro = intro_parts[0] + "\n\n"
+                    
+                # Take the most relevant parts (the beginning of the context)
+                truncated_context = intro + context[len(intro):max_context_chars] + "...\n[Context truncated due to length]"
+                logging.warning(f"Context truncated from {len(context)} to {len(truncated_context)} characters")
+                context = truncated_context
+            
+            # Prepare a simpler prompt for smaller models
+            prompt = f"""You are a helpful assistant answering questions about academic documents.
+
+Context from documents:
+{context}
+
+Question: {query}
+
+Please provide a concise answer based only on the information in the context.
+"""
+            
+            # Ollama API endpoint for generating completions
+            endpoint = f"{self.ollama_url}/api/generate"
+            
+            # Prepare the request data
+            data = {
+                "model": self.ollama_model,
+                "prompt": prompt,
+                "stream": False,
+                "options": {
+                    "temperature": 0.7,
+                    "num_predict": 1024,  # Maximum tokens to generate
+                }
+            }
+            
+            # Log the request (except for the full prompt which may be long)
+            logging.info(f"Making Ollama request to: {endpoint} with model: {self.ollama_model}")
+            
+            # First, make a small request to check if the model is loaded
+            ping_data = {
+                "model": self.ollama_model,
+                "prompt": "Hello",
+                "stream": False,
+                "options": {
+                    "num_predict": 1
+                }
+            }
+            
+            # Try to ping the model first to make sure it's loaded
+            try:
+                logging.info("Pinging Ollama to check if model is loaded...")
+                requests.post(endpoint, json=ping_data, timeout=5)
+                logging.info("Ping successful, model appears to be loaded")
+            except requests.RequestException as e:
+                logging.info(f"Ping failed, model might still be loading: {str(e)}")
+            
+            # Make the API request with a longer timeout
+            try:
+                logging.info("Sending main Ollama request...")
+                response = requests.post(endpoint, json=data, timeout=180)  # 3 minute timeout
+            except requests.Timeout:
+                logging.error("Ollama request timed out after 3 minutes")
+                return ("I'm sorry, the request to the local model timed out. This can happen if the model is "
+                        "still loading or if it's taking too long to process your question. You could try again "
+                        "with a shorter question or switch to a smaller model.")
+            
+            # Check for errors
+            if response.status_code != 200:
+                logging.error(f"Ollama API error: {response.status_code} {response.text}")
+                return f"Error from Ollama: {response.status_code}. Falling back to basic response generation."
+            
+            # Extract the generated text
+            result = response.json()
+            
+            # Ollama response format: {"response": "generated text", ...}
+            if "response" in result:
+                answer = result["response"]
+                
+                # Clean up the answer (Ollama sometimes includes the prompt or other artifacts)
+                # This is a simple approach; more complex cleaning might be needed
+                if "Answer:" in answer:
+                    answer = answer.split("Answer:")[-1].strip()
+                
+                return answer
+            
+            logging.warning(f"Unexpected Ollama API response structure: {result}")
+            return "Unable to parse Ollama response. Falling back to basic response generation."
+            
+        except requests.RequestException as e:
+            logging.error(f"Ollama API request error: {str(e)}")
+            return self._generate_fallback(query, context)
+        except Exception as e:
+            logging.error(f"Error in Ollama response generation: {str(e)}")
+            return self._generate_fallback(query, context)
+    
     def _generate_fallback(self, query: str, context: str) -> str:
         """
         Generate a simple response without using an external API.
-        Used as a fallback when the API isn't available.
+        Used as a fallback when APIs aren't available.
         
         Args:
             query: User's question

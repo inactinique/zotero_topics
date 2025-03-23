@@ -1,11 +1,12 @@
 import tkinter as tk
-from tkinter import ttk, scrolledtext
+from tkinter import ttk, scrolledtext, messagebox
 import logging
 from typing import Optional, List, Dict, Any
 import datetime
 import os
 from pathlib import Path
 import threading
+import requests
 
 from zotero_topic_modeling.rag.rag_manager import RAGManager
 
@@ -30,7 +31,9 @@ class ChatWindow(tk.Toplevel):
     A chat interface window for the "Speak with your PDFs" feature.
     """
     
-    def __init__(self, parent, documents: List[Dict[str, Any]], api_key: Optional[str] = None, theme_colors: Optional[Dict[str, str]] = None):
+    def __init__(self, parent, documents: List[Dict[str, Any]], api_key: Optional[str] = None, 
+                 use_ollama: bool = False, ollama_model: str = "llama3.2:3b",
+                 theme_colors: Optional[Dict[str, str]] = None):
         """
         Initialize the chat window.
         
@@ -38,6 +41,8 @@ class ChatWindow(tk.Toplevel):
             parent: Parent window
             documents: List of document dictionaries to use for RAG
             api_key: API key for the language model service (optional)
+            use_ollama: Whether to use Ollama instead of Anthropic API
+            ollama_model: Model to use with Ollama
             theme_colors: Dictionary of theme colors
         """
         super().__init__(parent)
@@ -76,21 +81,37 @@ class ChatWindow(tk.Toplevel):
         # Set window background
         self.configure(bg=self.colors['bg'])
         
-        # Initialize RAG manager
-        self.rag_manager = RAGManager(api_key=api_key)
+        # Store model parameters
+        self.use_ollama = use_ollama
+        self.ollama_model = ollama_model
+        self.api_key = api_key
+        
+        # Setup UI
+        self.setup_ui()
+        
+        # Check if Ollama is running if we're supposed to use it
+        if use_ollama:
+            self.check_ollama_connection()
         
         # Initialize messages
         self.messages = []
         
-        # Setup UI
-        self.setup_ui()
+        # Initialize RAG manager
+        self.rag_manager = RAGManager(
+            api_key=api_key,
+            use_ollama=use_ollama,
+            ollama_model=ollama_model
+        )
         
         # Start document processing
         self.status_label.config(text="Processing documents... Please wait.")
         self.rag_manager.process_documents(documents, self.on_processing_complete)
         
         # Add initial welcome message
-        self.add_message("Welcome to the PDF Chat! I'm processing your documents so you can ask questions about them. Please wait...", False)
+        if use_ollama:
+            self.add_message(f"Welcome to the PDF Chat! I'm using the local Ollama model '{ollama_model}' to answer your questions. Processing your documents now, please wait...", False)
+        else:
+            self.add_message("Welcome to the PDF Chat! I'm processing your documents so you can ask questions about them. Please wait...", False)
         
         # Store references to parent windows
         self.parent = parent
@@ -99,6 +120,41 @@ class ChatWindow(tk.Toplevel):
         self.protocol("WM_DELETE_WINDOW", self.on_close)
         
         logging.info("Chat window initialized")
+    
+    def check_ollama_connection(self):
+        """Check if Ollama is running and the model is available"""
+        try:
+            # Make a request to the Ollama API to check if it's running
+            response = requests.get("http://localhost:11434/api/tags", timeout=5)
+            
+            if response.status_code != 200:
+                messagebox.showwarning(
+                    "Ollama Connection Warning",
+                    "Couldn't connect to Ollama. Please make sure Ollama is running."
+                )
+                return False
+                
+            # Check if the model is available
+            models = response.json().get('models', [])
+            model_names = [model.get('name') for model in models]
+            
+            if self.ollama_model not in model_names:
+                messagebox.showwarning(
+                    "Ollama Model Warning",
+                    f"The model '{self.ollama_model}' is not available in Ollama. "
+                    f"Please download it with 'ollama pull {self.ollama_model}' "
+                    f"or choose one of the available models: {', '.join(model_names[:5])}..."
+                )
+                return False
+                
+            return True
+            
+        except requests.RequestException:
+            messagebox.showwarning(
+                "Ollama Connection Error",
+                "Couldn't connect to Ollama. Please make sure Ollama is running at http://localhost:11434."
+            )
+            return False
     
     def _lighten_color(self, hex_color: str, factor: float = 0.1) -> str:
         """
@@ -144,8 +200,20 @@ class ChatWindow(tk.Toplevel):
         status_frame = ttk.Frame(main_frame, style='Chat.TFrame')
         status_frame.pack(fill=tk.X, pady=(0, 5))
         
+        # Model info label - shows which model is being used
+        if self.use_ollama:
+            model_text = f"Using Ollama: {self.ollama_model}"
+        elif self.api_key:
+            model_text = "Using Anthropic API"
+        else:
+            model_text = "Using basic mode (no API)"
+            
+        self.model_label = ttk.Label(status_frame, text=model_text, style='Chat.TLabel')
+        self.model_label.pack(side=tk.LEFT)
+        
+        # Status label
         self.status_label = ttk.Label(status_frame, text="Initializing...", style='Chat.TLabel')
-        self.status_label.pack(side=tk.LEFT)
+        self.status_label.pack(side=tk.RIGHT)
         
         # Chat history frame
         history_frame = ttk.Frame(main_frame, style='Chat.TFrame')

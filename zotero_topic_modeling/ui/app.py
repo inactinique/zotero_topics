@@ -1,7 +1,8 @@
 import tkinter as tk
-from tkinter import ttk, messagebox
+from tkinter import ttk, messagebox, StringVar, BooleanVar
 import logging
 import os
+import requests
 
 from zotero_topic_modeling.utils.zotero_client import ZoteroClient
 from zotero_topic_modeling.utils.config_manager import ConfigManager
@@ -40,9 +41,17 @@ class ZoteroTopicModelingApp:
         self.current_collection = None  # Store current collection info
         self.chat_window = None  # Will store chat window reference
         
+        # Variables to store model results
+        self.lda_model = None
+        self.dictionary = None
+        self.corpus = None
+        self.processed_texts = None
+        self.document_titles = None
+        
         # Setup UI after variables are initialized
         self.setup_ui()
         self.load_saved_credentials()
+        self.check_ollama_availability()
         
         logging.info("Application initialized")
 
@@ -55,6 +64,38 @@ class ZoteroTopicModelingApp:
         self.progress_var = tk.DoubleVar()
         self.language_var = tk.StringVar(value="English")  # Default language
         self.num_topics_var = tk.IntVar(value=5)  # Default number of topics
+        
+        # Ollama variables
+        self.use_ollama_var = tk.BooleanVar(value=False)
+        self.ollama_available = False
+        self.ollama_model_var = tk.StringVar(value="llama3.2:3b")
+        self.available_ollama_models = []
+
+    def check_ollama_availability(self):
+        """Check if Ollama is available and get available models"""
+        try:
+            response = requests.get("http://localhost:11434/api/tags", timeout=5)
+            
+            if response.status_code == 200:
+                self.ollama_available = True
+                models = response.json().get('models', [])
+                self.available_ollama_models = [model.get('name') for model in models]
+                
+                # Update the UI
+                if hasattr(self, 'ollama_checkbox'):
+                    self.ollama_checkbox.config(state='normal')
+                    
+                    # If we have models, update the combobox
+                    if hasattr(self, 'ollama_model_combo') and self.available_ollama_models:
+                        self.ollama_model_combo['values'] = self.available_ollama_models
+                        
+                logging.info(f"Ollama available with models: {self.available_ollama_models}")
+            else:
+                self.ollama_available = False
+                logging.warning(f"Ollama check failed with status code: {response.status_code}")
+        except requests.RequestException:
+            self.ollama_available = False
+            logging.info("Ollama not available")
 
     def setup_ui(self):
         """Setup the user interface"""
@@ -134,15 +175,46 @@ class ZoteroTopicModelingApp:
         )
         topics_spinbox.grid(row=0, column=3, padx=5)
 
-        # Buttons frame for process and chat
+        # Chat settings frame
+        chat_settings_frame = ttk.LabelFrame(collection_frame, text="Chat Settings", padding="5")
+        chat_settings_frame.grid(row=2, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=5)
+
+        # Ollama checkbox
+        self.ollama_checkbox = ttk.Checkbutton(
+            chat_settings_frame, 
+            text="Use local Ollama model", 
+            variable=self.use_ollama_var,
+            command=self.toggle_ollama,
+            state='disabled' if not self.ollama_available else 'normal'
+        )
+        self.ollama_checkbox.grid(row=0, column=0, sticky=tk.W, padx=5)
+
+        # Ollama model selection
+        ttk.Label(chat_settings_frame, text="Model:").grid(row=0, column=1, sticky=tk.W, padx=(20,0))
+        self.ollama_model_combo = ttk.Combobox(
+            chat_settings_frame,
+            textvariable=self.ollama_model_var,
+            values=self.available_ollama_models if self.available_ollama_models else ["llama3.2:3b"],
+            state='disabled',
+            width=20
+        )
+        self.ollama_model_combo.grid(row=0, column=2, padx=5)
+
+        # Buttons frame for process and visualization
         action_frame = ttk.Frame(collection_frame)
-        action_frame.grid(row=2, column=0, columnspan=2, pady=10)
+        action_frame.grid(row=3, column=0, columnspan=2, pady=10)
         
         # Process button
         self.process_button = ttk.Button(action_frame, text="Process Selected Collection", 
                                        command=self.process_pdfs,
                                        state='disabled')
         self.process_button.pack(side=tk.LEFT, padx=5)
+        
+        # View Topics button
+        self.vis_button = ttk.Button(action_frame, text="View Topic Visualization", 
+                                   command=self.show_topic_visualization,
+                                   state='disabled')
+        self.vis_button.pack(side=tk.LEFT, padx=5)
         
         # Chat button
         self.chat_button = ttk.Button(action_frame, text="Speak with your PDFs", 
@@ -173,6 +245,42 @@ class ZoteroTopicModelingApp:
         
         logging.info("UI setup completed")
 
+    def toggle_ollama(self):
+        """Handle toggling Ollama checkbox"""
+        if self.use_ollama_var.get():
+            # Check if Ollama is running
+            if not self.ollama_available:
+                try:
+                    response = requests.get("http://localhost:11434/api/tags", timeout=5)
+                    if response.status_code == 200:
+                        self.ollama_available = True
+                        models = response.json().get('models', [])
+                        self.available_ollama_models = [model.get('name') for model in models]
+                        
+                        # Update combobox values
+                        self.ollama_model_combo['values'] = self.available_ollama_models
+                        
+                        # Enable combobox
+                        self.ollama_model_combo.config(state='readonly')
+                    else:
+                        messagebox.showwarning(
+                            "Ollama Not Available", 
+                            "Could not connect to Ollama. Make sure Ollama is running."
+                        )
+                        self.use_ollama_var.set(False)
+                except requests.RequestException:
+                    messagebox.showwarning(
+                        "Ollama Not Available", 
+                        "Could not connect to Ollama. Make sure Ollama is running at http://localhost:11434."
+                    )
+                    self.use_ollama_var.set(False)
+            else:
+                # Enable combobox
+                self.ollama_model_combo.config(state='readonly')
+        else:
+            # Disable combobox
+            self.ollama_model_combo.config(state='disabled')
+
     def clear_credentials(self):
         """Clear saved credentials and current entries"""
         try:
@@ -189,6 +297,7 @@ class ZoteroTopicModelingApp:
             self.collection_tree.delete(*self.collection_tree.get_children())
             self.process_button['state'] = 'disabled'
             self.chat_button['state'] = 'disabled'
+            self.vis_button['state'] = 'disabled'
             
             # Clear collections
             self.collections = None
@@ -317,6 +426,13 @@ class ZoteroTopicModelingApp:
         """Clear current items and collection data"""
         self.items = None
         self.current_collection = None
+        
+        # Clear model data
+        self.lda_model = None
+        self.dictionary = None
+        self.corpus = None
+        self.processed_texts = None
+        self.document_titles = None
 
     def process_pdfs(self):
         """Process PDFs from selected collection"""
@@ -354,6 +470,7 @@ class ZoteroTopicModelingApp:
             # Disable UI elements
             self.process_button['state'] = 'disabled'
             self.chat_button['state'] = 'disabled'
+            self.vis_button['state'] = 'disabled'
             self.collection_tree.unbind('<<TreeviewSelect>>')
             
             # Start processing thread
@@ -389,9 +506,17 @@ class ZoteroTopicModelingApp:
             self.collection_tree.bind('<<TreeviewSelect>>', self.on_collection_select)
             return
             
+        # Store the model results
+        self.lda_model = lda_model
+        self.dictionary = dictionary
+        self.corpus = corpus
+        self.processed_texts = texts
+        self.document_titles = titles
+        
         # Re-enable UI elements
         self.process_button['state'] = 'normal'
         self.chat_button['state'] = 'normal'  # Enable chat button after processing
+        self.vis_button['state'] = 'normal'   # Enable visualization button after processing
         self.collection_tree.bind('<<TreeviewSelect>>', self.on_collection_select)
         
         try:
@@ -408,6 +533,31 @@ class ZoteroTopicModelingApp:
         except Exception as e:
             logging.error(f"Error in processing completion: {str(e)}")
             messagebox.showerror("Error", f"Error: {str(e)}")
+
+    def show_topic_visualization(self):
+        """Show the topic modeling visualization in a separate window"""
+        if not all([self.lda_model, self.dictionary, self.corpus, self.document_titles]):
+            messagebox.showwarning("Warning", "Please process a collection first")
+            return
+            
+        try:
+            # Import results window here to avoid circular imports
+            from zotero_topic_modeling.ui.results_window import TopicModelingResults
+            
+            # Create and show the results window
+            results_window = TopicModelingResults(
+                self.root,
+                self.lda_model,
+                self.dictionary,
+                self.corpus,
+                self.document_titles,
+                self.items,
+                self.colors
+            )
+            
+        except Exception as e:
+            logging.error(f"Error showing visualization: {str(e)}")
+            messagebox.showerror("Error", f"Error showing visualization: {str(e)}")
 
     def open_chat_window(self):
         """Open the chat window for RAG-based conversation with PDFs"""
@@ -462,11 +612,22 @@ class ZoteroTopicModelingApp:
                               "Opening chat window. The system will first process your documents, "
                               "which may take a few moments depending on the number and size of PDFs.")
             
-            # Try to get API key from environment
-            api_key = os.environ.get("ANTHROPIC_API_KEY")
+            # Check if we should use Ollama
+            use_ollama = self.use_ollama_var.get()
+            ollama_model = self.ollama_model_var.get()
+            
+            # Get API key if not using Ollama
+            api_key = None if use_ollama else (self.api_key_var.get() or os.environ.get("ANTHROPIC_API_KEY"))
             
             # Open the chat window
-            self.chat_window = ChatWindow(self.root, documents, api_key=api_key, theme_colors=self.colors)
+            self.chat_window = ChatWindow(
+                self.root, 
+                documents, 
+                api_key=api_key, 
+                use_ollama=use_ollama,
+                ollama_model=ollama_model,
+                theme_colors=self.colors
+            )
             
         except Exception as e:
             logging.error(f"Error opening chat window: {str(e)}")

@@ -13,16 +13,22 @@ class RAGManager:
     Manages the complete RAG pipeline from document processing to response generation.
     """
     
-    def __init__(self, api_key: Optional[str] = None):
+    def __init__(self, api_key: Optional[str] = None, use_ollama: bool = False, ollama_model: str = "llama3.2:3b"):
         """
         Initialize the RAG manager.
         
         Args:
             api_key: API key for the language model service (optional)
+            use_ollama: Whether to use Ollama instead of Anthropic API
+            ollama_model: Model to use with Ollama 
         """
         self.chunk_processor = ChunkProcessor()
         self.embedder = DocumentEmbedder()
-        self.generator = ResponseGenerator(api_key=api_key)
+        self.generator = ResponseGenerator(
+            api_key=api_key, 
+            use_ollama=use_ollama, 
+            ollama_model=ollama_model
+        )
         
         self.is_initialized = False
         self.is_processing = False
@@ -33,6 +39,12 @@ class RAGManager:
         os.makedirs(self.storage_dir, exist_ok=True)
         
         logging.info("Initialized RAG manager")
+        if use_ollama:
+            logging.info(f"Using Ollama with model: {ollama_model}")
+        elif api_key:
+            logging.info("Using Anthropic API")
+        else:
+            logging.info("Using fallback response generation (no API)")
     
     def process_documents(self, documents: List[Dict[str, Any]], callback: Optional[callable] = None) -> None:
         """
@@ -123,7 +135,7 @@ class RAGManager:
         """
         try:
             # Check if the necessary files exist
-            index_path = os.path.join(self.storage_dir, 'index.faiss')
+            index_path = os.path.join(self.storage_dir, 'embeddings.pkl')
             chunks_path = os.path.join(self.storage_dir, 'chunks.pkl')
             
             if not os.path.exists(index_path) or not os.path.exists(chunks_path):
