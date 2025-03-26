@@ -7,8 +7,10 @@ import os
 from pathlib import Path
 import threading
 import requests
+from zotero_topic_modeling.rag.chroma_rag_manager import ChromaRAGManager
 
-from zotero_topic_modeling.rag.rag_manager import RAGManager
+
+# from zotero_topic_modeling.rag.rag_manager import RAGManager
 
 class ChatMessage:
     """Represents a single message in the chat"""
@@ -33,6 +35,7 @@ class ChatWindow(tk.Toplevel):
     
     def __init__(self, parent, documents: List[Dict[str, Any]], api_key: Optional[str] = None, 
                  use_ollama: bool = False, ollama_model: str = "llama3.2:3b",
+                 temperature: float = 0.7, top_k: int = 40, top_p: float = 0.9,
                  theme_colors: Optional[Dict[str, str]] = None):
         """
         Initialize the chat window.
@@ -43,6 +46,9 @@ class ChatWindow(tk.Toplevel):
             api_key: API key for the language model service (optional)
             use_ollama: Whether to use Ollama instead of Anthropic API
             ollama_model: Model to use with Ollama
+            temperature: Generation temperature (0.0-1.0)
+            top_k: Top-k sampling parameter (1-100)
+            top_p: Top-p sampling parameter (0.0-1.0)
             theme_colors: Dictionary of theme colors
         """
         super().__init__(parent)
@@ -85,6 +91,9 @@ class ChatWindow(tk.Toplevel):
         self.use_ollama = use_ollama
         self.ollama_model = ollama_model
         self.api_key = api_key
+        self.temperature = temperature
+        self.top_k = top_k
+        self.top_p = top_p
         
         # Setup UI
         self.setup_ui()
@@ -97,11 +106,16 @@ class ChatWindow(tk.Toplevel):
         self.messages = []
         
         # Initialize RAG manager
-        self.rag_manager = RAGManager(
+        self.rag_manager = ChromaRAGManager(
             api_key=api_key,
             use_ollama=use_ollama,
-            ollama_model=ollama_model
+            ollama_model=ollama_model,
+            temperature=temperature,
+            top_k=top_k,
+            top_p=top_p,
+            persist_directory=os.path.join(Path.home(), '.zotero_topic_modeling', 'vector_db')
         )
+ 
         
         # Start document processing
         self.status_label.config(text="Processing documents... Please wait.")
@@ -202,11 +216,11 @@ class ChatWindow(tk.Toplevel):
         
         # Model info label - shows which model is being used
         if self.use_ollama:
-            model_text = f"Using Ollama: {self.ollama_model}"
+            model_text = f"Ollama: {self.ollama_model} (T={self.temperature:.1f}, P={self.top_p:.1f}, K={self.top_k})"
         elif self.api_key:
-            model_text = "Using Anthropic API"
+            model_text = f"Claude API (T={self.temperature:.1f}, P={self.top_p:.1f})"
         else:
-            model_text = "Using basic mode (no API)"
+            model_text = "Basic mode (no API)"
             
         self.model_label = ttk.Label(status_frame, text=model_text, style='Chat.TLabel')
         self.model_label.pack(side=tk.LEFT)

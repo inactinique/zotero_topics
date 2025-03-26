@@ -10,7 +10,6 @@ from zotero_topic_modeling.ui.welcome_dialog import WelcomeDialog
 from zotero_topic_modeling.ui.chat_window import ChatWindow
 from zotero_topic_modeling.ui.theme import DarkTheme
 from zotero_topic_modeling.utils.language_config import LanguageManager
-from zotero_topic_modeling.rag.rag_manager import RAGManager
 
 class ZoteroTopicModelingApp:
     def __init__(self, root):
@@ -67,11 +66,6 @@ class ZoteroTopicModelingApp:
         self.num_topics_var = tk.IntVar(value=5)  # Default number of topics
         self.use_ollama_var = tk.BooleanVar(value=False)  # Whether to use Ollama
         self.ollama_model_var = tk.StringVar(value="llama3.2:3b")  # Default Ollama model
-        
-        # Generation parameters
-        self.temperature_var = tk.DoubleVar(value=0.7)  # Default temperature
-        self.top_k_var = tk.IntVar(value=40)  # Default top_k
-        self.top_p_var = tk.DoubleVar(value=0.9)  # Default top_p
 
     def setup_ui(self):
         """Setup the user interface"""
@@ -163,137 +157,18 @@ class ZoteroTopicModelingApp:
         
         # Ollama model selection
         ttk.Label(chat_settings_frame, text="Model:").pack(side=tk.LEFT, padx=(15, 0))
-        
-        # Create a temporary RAG manager just to get available models
-        temp_rag = RAGManager(use_ollama=True)
-        available_models = temp_rag.get_available_ollama_models()
-        
-        # Use available models if any, otherwise fall back to defaults
-        if not available_models:
-            available_models = ["llama3.2:3b", "llama3.2:8b", "phi3:3.8b", "gemma:2b", "gemma:7b"]
-            
         self.ollama_model_combobox = ttk.Combobox(
             chat_settings_frame,
             textvariable=self.ollama_model_var,
-            values=available_models,
+            values=["llama3.2:3b", "llama3.2:8b", "llama3.2:70b", "gemma:2b", "gemma:7b", "phi3:3.8b"],
             state='readonly',
             width=15
         )
         self.ollama_model_combobox.pack(side=tk.LEFT, padx=5)
         
-        # Set a default model that exists in the available models
-        if available_models and self.ollama_model_var.get() not in available_models:
-            self.ollama_model_var.set(available_models[0])
-        
-        # Refresh models button
-        self.refresh_models_button = ttk.Button(
-            chat_settings_frame,
-            text="↻",  # Refresh symbol
-            width=2,
-            command=self.refresh_ollama_models
-        )
-        self.refresh_models_button.pack(side=tk.LEFT, padx=2)
-        
         # Initially disable Ollama model selection if not using Ollama
         if not self.use_ollama_var.get():
             self.ollama_model_combobox.config(state='disabled')
-            self.refresh_models_button.config(state='disabled')
-        
-        # Advanced Generation Parameters
-        adv_params_frame = ttk.LabelFrame(settings_frame, text="Paramètres de génération")
-        adv_params_frame.grid(row=2, column=0, columnspan=4, sticky=(tk.W, tk.E), pady=(10, 0))
-        
-        # Temperature control
-        temp_frame = ttk.Frame(adv_params_frame)
-        temp_frame.pack(fill=tk.X, padx=5, pady=2)
-        ttk.Label(temp_frame, text="Température:").pack(side=tk.LEFT)
-        
-        temperature_scale = ttk.Scale(
-            temp_frame,
-            from_=0.0,
-            to=1.0,
-            variable=self.temperature_var,
-            orient=tk.HORIZONTAL,
-            length=150
-        )
-        temperature_scale.pack(side=tk.LEFT, padx=5, fill=tk.X, expand=True)
-        
-        # Temperature display
-        temp_value = ttk.Label(temp_frame, text="0.7")
-        temp_value.pack(side=tk.LEFT, padx=5)
-        
-        # Update temperature label when value changes
-        def update_temp_label(*args):
-            temp_value.config(text=f"{self.temperature_var.get():.1f}")
-        self.temperature_var.trace_add("write", update_temp_label)
-        
-        # Top-P control
-        top_p_frame = ttk.Frame(adv_params_frame)
-        top_p_frame.pack(fill=tk.X, padx=5, pady=2)
-        ttk.Label(top_p_frame, text="Top-P:").pack(side=tk.LEFT)
-        
-        top_p_scale = ttk.Scale(
-            top_p_frame,
-            from_=0.1,
-            to=1.0,
-            variable=self.top_p_var,
-            orient=tk.HORIZONTAL,
-            length=150
-        )
-        top_p_scale.pack(side=tk.LEFT, padx=5, fill=tk.X, expand=True)
-        
-        # Top-P display
-        top_p_value = ttk.Label(top_p_frame, text="0.9")
-        top_p_value.pack(side=tk.LEFT, padx=5)
-        
-        # Update top-p label when value changes
-        def update_top_p_label(*args):
-            top_p_value.config(text=f"{self.top_p_var.get():.1f}")
-        self.top_p_var.trace_add("write", update_top_p_label)
-        
-        # Top-K control (only relevant for Ollama)
-        top_k_frame = ttk.Frame(adv_params_frame)
-        top_k_frame.pack(fill=tk.X, padx=5, pady=2)
-        ttk.Label(top_k_frame, text="Top-K:").pack(side=tk.LEFT)
-        
-        top_k_scale = ttk.Scale(
-            top_k_frame,
-            from_=1,
-            to=100,
-            variable=self.top_k_var,
-            orient=tk.HORIZONTAL,
-            length=150
-        )
-        top_k_scale.pack(side=tk.LEFT, padx=5, fill=tk.X, expand=True)
-        
-        # Top-K display
-        top_k_value = ttk.Label(top_k_frame, text="40")
-        top_k_value.pack(side=tk.LEFT, padx=5)
-        
-        # Update top-k label when value changes
-        def update_top_k_label(*args):
-            top_k_value.config(text=f"{self.top_k_var.get()}")
-        self.top_k_var.trace_add("write", update_top_k_label)
-        
-        # Add help button for generation parameters
-        help_frame = ttk.Frame(adv_params_frame)
-        help_frame.pack(fill=tk.X, padx=5, pady=2)
-        
-        help_button = ttk.Button(
-            help_frame,
-            text="?",
-            width=2,
-            command=self.show_generation_params_help
-        )
-        help_button.pack(side=tk.RIGHT, padx=5)
-        
-        # Reset parameters button
-        reset_button = ttk.Button(
-            help_frame,
-            text="Réinitialiser",
-            command=self.reset_generation_params
-        )
-        reset_button.pack(side=tk.RIGHT, padx=5)
 
         # Buttons frame for processing actions
         action_buttons_frame = ttk.Frame(collection_frame)
@@ -353,70 +228,8 @@ class ZoteroTopicModelingApp:
         """Toggle the state of Ollama-related options"""
         if self.use_ollama_var.get():
             self.ollama_model_combobox.config(state='readonly')
-            self.refresh_models_button.config(state='normal')
         else:
             self.ollama_model_combobox.config(state='disabled')
-            self.refresh_models_button.config(state='disabled')
-    
-    def refresh_ollama_models(self):
-        """Refresh the list of available Ollama models"""
-        # Create a temporary RAG manager to get available models
-        temp_rag = RAGManager(use_ollama=True)
-        available_models = temp_rag.fetch_available_ollama_models()
-        
-        # Update the combo box with new values
-        current_model = self.ollama_model_var.get()
-        
-        # Update values in combobox
-        self.ollama_model_combobox['values'] = available_models
-        
-        # Try to keep current selection if it's still available
-        if available_models:
-            if current_model in available_models:
-                self.ollama_model_var.set(current_model)
-            else:
-                self.ollama_model_var.set(available_models[0])
-                
-        # Show feedback
-        if available_models:
-            self.status_var.set(f"Found {len(available_models)} Ollama models")
-        else:
-            self.status_var.set("No Ollama models found. Is Ollama running?")
-            messagebox.showwarning(
-                "No Models Found",
-                "No Ollama models were found. Please make sure Ollama is running."
-            )
-    
-    def show_generation_params_help(self):
-        """Show help information about generation parameters"""
-        help_text = """Paramètres de génération:
-
-Température (0.0-1.0):
-Une valeur plus basse (proche de 0) rend les réponses plus déterministes et cohérentes.
-Une valeur plus haute (proche de 1) rend les réponses plus créatives et variées.
-
-Top-P (0.1-1.0):
-Contrôle la diversité en limitant les tokens aux plus probables dont la somme atteint P.
-Une valeur plus basse (0.1-0.7) donne des réponses plus focalisées.
-Une valeur plus haute (0.8-1.0) permet plus de diversité.
-
-Top-K (1-100):
-Limite la sélection aux K tokens les plus probables à chaque étape.
-Une valeur plus basse (5-20) rend les réponses plus prévisibles.
-Une valeur plus haute (40-100) permet plus de flexibilité.
-
-Réglages recommandés:
-- Réponses factuelles: température basse (0.1-0.3)
-- Créativité équilibrée: température moyenne (0.5-0.7)
-- Génération créative: température élevée (0.8-1.0)"""
-        
-        messagebox.showinfo("Aide sur les paramètres de génération", help_text)
-    
-    def reset_generation_params(self):
-        """Reset generation parameters to defaults"""
-        self.temperature_var.set(0.7)
-        self.top_p_var.set(0.9)
-        self.top_k_var.set(40)
 
     def show_welcome_dialog(self):
         """Show the welcome dialog for credential management"""
@@ -735,16 +548,13 @@ Réglages recommandés:
                         self.show_welcome_dialog()
                         return
             
-            # Create chat window with generation parameters
+            # Create chat window
             chat_window = ChatWindow(
                 self.root,
                 documents,
                 api_key=claude_api_key,
                 use_ollama=self.use_ollama_var.get(),
                 ollama_model=self.ollama_model_var.get(),
-                temperature=self.temperature_var.get(),
-                top_k=self.top_k_var.get(),
-                top_p=self.top_p_var.get(),
                 theme_colors=self.colors
             )
             

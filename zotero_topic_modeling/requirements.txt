@@ -6,11 +6,9 @@ nltk==3.8.1
 matplotlib==3.8.2
 numpy==1.26.2
 requests==2.31.0
-pandas==2.0.3
-
-# RAG dependencies
+keyring==24.3.0  # Added for secure credential storage
+chromadb==0.4.18
 sentence-transformers==2.2.2
-faiss-cpu==1.7.4
 
 # UI dependencies
 tk==0.1.0  # Usually comes with Python, version may vary
