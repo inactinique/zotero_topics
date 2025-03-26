@@ -1,5 +1,3 @@
-# File: zotero_topic_modeling/rag/chroma_rag_manager.py
-
 import logging
 import threading
 import os
@@ -8,19 +6,17 @@ from typing import List, Dict, Any, Callable, Optional
 import requests
 import json
 import time
-import uuid
-import sys
 
 class ChromaRAGManager:
     """
-    RAG Manager using LangChain and Chroma for vector search.
+    RAG Manager using simple retrieval methods for document Q&A.
     """
     
     def __init__(self, api_key=None, use_ollama=False, ollama_model="llama3.2:3b", 
                  embedding_model_name="all-MiniLM-L6-v2", persist_directory=None,
                  temperature=0.7, top_k=40, top_p=0.9):
         """
-        Initialize the RAG manager with Chroma.
+        Initialize the RAG manager.
         
         Args:
             api_key: Anthropic API key (optional if using Ollama)
@@ -44,140 +40,18 @@ class ChromaRAGManager:
         if persist_directory and not os.path.exists(persist_directory):
             os.makedirs(persist_directory)
         
-        # IMPORTANT: Explicitly set cache directory for transformers
-        # This helps manage model downloads on macOS
-        os.environ['TRANSFORMERS_CACHE'] = os.path.join(Path.home(), '.cache', 'huggingface')
-        cache_dir = os.environ['TRANSFORMERS_CACHE']
-        if not os.path.exists(cache_dir):
-            os.makedirs(cache_dir, exist_ok=True)
-        logging.info(f"Using transformers cache directory: {cache_dir}")
-        
-        # Initialize embedding model
-        self.embeddings = None
-        try:
-            # Import here to handle import errors gracefully
-            try:
-                from langchain_community.embeddings import HuggingFaceEmbeddings
-                logging.info("Successfully imported HuggingFaceEmbeddings")
-            except ImportError as e:
-                logging.error(f"Error importing HuggingFaceEmbeddings: {str(e)}")
-                raise ImportError("Failed to import HuggingFaceEmbeddings. Please ensure langchain-community is installed.")
-            
-            # Explicitly download model if needed
-            try:
-                import sentence_transformers
-                logging.info(f"Using sentence-transformers version: {sentence_transformers.__version__}")
-                
-                from sentence_transformers import SentenceTransformer
-                # Try to load the model with explicit cache path
-                model = SentenceTransformer(
-                    embedding_model_name, 
-                    cache_folder=cache_dir
-                )
-                logging.info(f"Successfully loaded model: {embedding_model_name}")
-                
-                # Initialize embeddings with the pre-loaded model
-                self.embeddings = HuggingFaceEmbeddings(
-                    model_name=embedding_model_name,
-                    cache_folder=cache_dir
-                )
-                logging.info("HuggingFaceEmbeddings initialized successfully")
-            except Exception as e:
-                logging.error(f"Error loading embedding model: {str(e)}")
-                raise ValueError(f"Failed to initialize embedding model: {str(e)}")
-        except Exception as main_error:
-            logging.error(f"Failed to initialize embeddings: {str(main_error)}")
-            self.embeddings = None
-        
-        # Initialize text splitter
-        try:
-            from langchain.text_splitter import RecursiveCharacterTextSplitter
-            self.text_splitter = RecursiveCharacterTextSplitter(
-                chunk_size=500,
-                chunk_overlap=100,
-                separators=["\n\n", "\n", ". ", " ", ""]
-            )
-            logging.info("Text splitter initialized")
-        except ImportError:
-            logging.error("Failed to import RecursiveCharacterTextSplitter")
-            raise ImportError("Failed to import RecursiveCharacterTextSplitter. Please ensure langchain is installed.")
-        
-        # Vector store
-        self.vector_store = None
-        
-        # Document metadata
-        self.document_metadata = {}
-        self.titles = []
-        
-        # State
+        # State and storage
         self.ready = False
+        self.documents = []
+        self.titles = []
+        self.document_index = []
         
         # API endpoints
         self.anthropic_endpoint = "https://api.anthropic.com/v1/messages"
         self.ollama_endpoint = "http://localhost:11434/api/generate"
         
-        # Try to load existing Chroma database
-        if self.persist_directory and os.path.exists(self.persist_directory):
-            try:
-                self.load_vector_store()
-            except Exception as e:
-                logging.error(f"Error loading Chroma DB: {str(e)}")
+        logging.info("SimpleRAGManager initialized")
         
-        logging.info("ChromaRAGManager initialized")
-    
-    def load_vector_store(self):
-        """Load existing Chroma database"""
-        if not self.embeddings:
-            logging.error("Cannot load vector store: embedding model not initialized")
-            return False
-            
-        try:
-            # Import here to handle import errors gracefully
-            try:
-                from langchain_community.vectorstores import Chroma
-                logging.info("Successfully imported Chroma")
-            except ImportError:
-                logging.error("Failed to import Chroma")
-                return False
-            
-            # Load Chroma DB
-            self.vector_store = Chroma(
-                persist_directory=self.persist_directory,
-                embedding_function=self.embeddings
-            )
-            logging.info(f"Loaded Chroma DB from {self.persist_directory}")
-            
-            # Load metadata if available
-            metadata_path = os.path.join(self.persist_directory, "metadata.json")
-            if os.path.exists(metadata_path):
-                with open(metadata_path, 'r', encoding='utf-8') as f:
-                    data = json.load(f)
-                    self.document_metadata = data.get('document_metadata', {})
-                    self.titles = data.get('titles', [])
-                logging.info(f"Loaded metadata for {len(self.titles)} documents")
-            
-            self.ready = True
-            return True
-        except Exception as e:
-            logging.error(f"Error loading Chroma DB: {str(e)}")
-            return False
-    
-    def save_metadata(self):
-        """Save document metadata separately"""
-        if not self.persist_directory:
-            return
-            
-        try:
-            metadata_path = os.path.join(self.persist_directory, "metadata.json")
-            with open(metadata_path, 'w', encoding='utf-8') as f:
-                json.dump({
-                    'document_metadata': self.document_metadata,
-                    'titles': self.titles
-                }, f, ensure_ascii=False, indent=2)
-            logging.info(f"Saved metadata to {metadata_path}")
-        except Exception as e:
-            logging.error(f"Error saving metadata: {str(e)}")
-    
     def process_documents(self, documents, on_complete=None):
         """Process documents in background thread"""
         threading.Thread(
@@ -187,28 +61,15 @@ class ChromaRAGManager:
         ).start()
     
     def _process_documents_thread(self, documents, on_complete=None):
-        """Process and index documents in Chroma"""
+        """Process and index documents using a simple approach"""
         try:
-            if not self.embeddings:
-                raise ValueError("Embedding model not available. Check that sentence-transformers is properly installed.")
-                
             logging.info(f"Processing {len(documents)} documents")
             start_time = time.time()
             
             # Reset for new processing
             self.titles = []
-            self.document_metadata = {}
-            
-            # Import here to handle import errors
-            try:
-                from langchain_community.vectorstores import Chroma
-                from langchain_core.documents import Document
-            except ImportError as e:
-                logging.error(f"Failed to import required modules: {str(e)}")
-                raise ImportError(f"Failed to import required modules: {str(e)}")
-            
-            # Prepare documents for LangChain
-            processed_docs = []
+            self.documents = []
+            self.document_index = []
             
             for doc_idx, doc in enumerate(documents):
                 title = doc.get('title', 'Untitled Document')
@@ -221,53 +82,22 @@ class ChromaRAGManager:
                     logging.warning(f"Document '{title}' has no text content")
                     continue
                 
-                # Generate unique document ID
-                doc_id = f"doc_{doc_idx}_{uuid.uuid4().hex[:8]}"
-                
-                # Store metadata
-                self.document_metadata[doc_id] = {
+                # Store the document
+                self.documents.append({
                     'title': title,
-                    'doc_index': doc_idx
-                }
+                    'text': text,
+                    'doc_idx': doc_idx
+                })
                 
-                # Split document into chunks
-                try:
-                    chunks = self.text_splitter.split_text(text)
-                    logging.info(f"Split '{title}' into {len(chunks)} chunks")
-                    
-                    # Create LangChain documents
-                    for i, chunk in enumerate(chunks):
-                        processed_docs.append(
-                            Document(
-                                page_content=chunk,
-                                metadata={
-                                    "title": title,
-                                    "doc_id": doc_id,
-                                    "chunk_id": i,
-                                    "source": f"{title} (Part {i+1})"
-                                }
-                            )
-                        )
-                except Exception as e:
-                    logging.error(f"Error splitting document '{title}': {str(e)}")
-            
-            if processed_docs:
-                # Initialize Chroma with these documents
-                self.vector_store = Chroma.from_documents(
-                    documents=processed_docs,
-                    embedding=self.embeddings,
-                    persist_directory=self.persist_directory
-                )
+                # Create chunks for the document
+                chunks = self._chunk_document(text, title)
                 
-                # Persist the database
-                if self.persist_directory:
-                    self.vector_store.persist()
-                    self.save_metadata()
-                    logging.info(f"Persisted Chroma DB to {self.persist_directory}")
+                # Add chunks to document index
+                self.document_index.extend(chunks)
             
             self.ready = True
             elapsed_time = time.time() - start_time
-            logging.info(f"Indexing completed in {elapsed_time:.2f}s. {len(processed_docs)} chunks indexed")
+            logging.info(f"Indexing completed in {elapsed_time:.2f}s. {len(self.document_index)} chunks indexed")
             
             # Call completion callback
             if on_complete:
@@ -278,38 +108,86 @@ class ChromaRAGManager:
             if on_complete:
                 on_complete(False)
     
-    def retrieve_relevant_documents(self, query, top_k=5):
-        """Retrieve relevant documents using vector similarity"""
-        if not self.ready or not self.vector_store:
+    def _chunk_document(self, text, title, chunk_size=1000, overlap=200):
+        """Split a document into overlapping chunks"""
+        chunks = []
+        
+        # Check if text is long enough to chunk
+        if len(text) <= chunk_size:
+            return [{
+                'text': text,
+                'title': title,
+                'chunk_id': 0
+            }]
+        
+        # Split into chunks with overlap
+        for i in range(0, len(text), chunk_size - overlap):
+            chunk_text = text[i:i + chunk_size]
+            
+            # Ensure we're not cutting in the middle of a sentence if possible
+            if i > 0 and i + chunk_size < len(text):
+                # Find the first sentence end after the start of this chunk
+                import re
+                match = re.search(r'[.!?]\s+', chunk_text[:overlap])
+                if match:
+                    start_pos = match.end()
+                    chunk_text = chunk_text[start_pos:]
+                
+                # Find the last sentence end before the end of this chunk
+                last_part = chunk_text[-overlap:] if len(chunk_text) > overlap else chunk_text
+                match = re.search(r'[.!?]\s+[A-Z]', last_part)
+                if match:
+                    end_pos = len(chunk_text) - overlap + match.start() + 1
+                    chunk_text = chunk_text[:end_pos]
+            
+            # Create chunk with metadata
+            chunk_id = len(chunks)
+            chunks.append({
+                'text': chunk_text,
+                'title': f"{title} (Part {chunk_id + 1})",
+                'chunk_id': chunk_id
+            })
+        
+        return chunks
+    
+    def retrieve_relevant_documents(self, query, top_k=3):
+        """
+        Retrieve the most relevant documents for a query using simple keyword matching.
+        
+        Args:
+            query: User's question
+            top_k: Number of documents to retrieve
+        
+        Returns:
+            List of relevant document dictionaries
+        """
+        if not self.ready or not self.document_index:
             return []
         
-        try:
-            # Search documents similar to query
-            results = self.vector_store.similarity_search_with_relevance_scores(
-                query=query, 
-                k=top_k
-            )
+        # Simple keyword matching
+        query_words = set(query.lower().split())
+        
+        # Score all chunks
+        scored_chunks = []
+        for chunk in self.document_index:
+            # Count matching words
+            chunk_text = chunk['text'].lower()
+            score = sum(1 for word in query_words if word in chunk_text)
             
-            # Format results
-            relevant_docs = []
-            for doc, score in results:
-                relevant_docs.append({
-                    'title': doc.metadata.get('source', 'Unknown'),
-                    'text': doc.page_content,
-                    'score': score,
-                    'doc_id': doc.metadata.get('doc_id', ''),
-                    'doc_title': doc.metadata.get('title', 'Unknown')
+            if score > 0:
+                scored_chunks.append({
+                    'title': chunk['title'],
+                    'text': chunk['text'],
+                    'score': score
                 })
-            
-            return relevant_docs
-            
-        except Exception as e:
-            logging.error(f"Error retrieving documents: {str(e)}")
-            return []
+        
+        # Sort by score (descending) and take top k
+        scored_chunks.sort(key=lambda x: x['score'], reverse=True)
+        return scored_chunks[:top_k]
     
     def is_ready(self):
         """Check if system is ready to process queries"""
-        return self.ready and self.vector_store is not None
+        return self.ready and len(self.document_index) > 0
     
     def estimate_tokens(self, text):
         """Estimate number of tokens in text"""
@@ -326,7 +204,7 @@ class ChromaRAGManager:
         
         try:
             # Retrieve relevant document chunks
-            relevant_chunks = self.retrieve_relevant_documents(query, top_k=5)
+            relevant_chunks = self.retrieve_relevant_documents(query)
             
             if not relevant_chunks:
                 context = "I don't have enough information to answer this question based on the documents."
@@ -361,7 +239,7 @@ class ChromaRAGManager:
         try:
             # Prepare prompt
             system_prompt = (
-                "You are a helpful assistant answering questions about scientific documents in French. "
+                "You are a helpful assistant answering questions about scientific documents. "
                 "Base your answers only on the provided context. "
                 "If you don't know the answer, say so clearly. "
                 "Provide detailed and precise answers, citing relevant documents."
@@ -412,7 +290,7 @@ class ChromaRAGManager:
         """Generate response using local Ollama model"""
         try:
             # Prepare prompt
-            prompt = f"""You are a helpful assistant answering questions about scientific documents in French.
+            prompt = f"""You are a helpful assistant answering questions about scientific documents.
 Base your answers only on the provided context.
 If you don't know the answer, say so clearly.
 Provide detailed and precise answers, citing relevant documents.
@@ -463,3 +341,18 @@ Please answer based on the provided context.
         except Exception as e:
             logging.error(f"Ollama API error: {str(e)}")
             return f"I encountered an error: {str(e)}"
+    
+    def get_available_ollama_models(self):
+        """Get list of available models from Ollama"""
+        try:
+            response = requests.get("http://localhost:11434/api/tags", timeout=5)
+            if response.status_code == 200:
+                models = response.json().get('models', [])
+                return [model.get('name') for model in models]
+            return []
+        except:
+            return []
+            
+    def fetch_available_ollama_models(self):
+        """Fetch and return available Ollama models"""
+        return self.get_available_ollama_models()

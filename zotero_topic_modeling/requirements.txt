@@ -6,9 +6,15 @@ nltk==3.8.1
 matplotlib==3.8.2
 numpy==1.26.2
 requests==2.31.0
-keyring==24.3.0  # Added for secure credential storage
+keyring==24.3.0  # For secure credential storage
+
+# RAG dependencies
 chromadb==0.4.18
 sentence-transformers==2.2.2
+pydantic==1.10.8  # Pin to version before Pydantic 2.0
+langchain==0.0.335  # Explicitly define version
+langchain-community==0.0.20  # Explicitly define version
+faiss-cpu==1.7.4
 
 # UI dependencies
 tk==0.1.0  # Usually comes with Python, version may vary
