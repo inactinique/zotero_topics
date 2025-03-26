@@ -150,7 +150,7 @@ class ChromaRAGManager:
         
         return chunks
     
-    def retrieve_relevant_documents(self, query, top_k=3):
+    def retrieve_relevant_documents(self, query, top_k=100):
         """
         Retrieve the most relevant documents for a query using simple keyword matching.
         
@@ -356,3 +356,4 @@ Please answer based on the provided context.
     def fetch_available_ollama_models(self):
         """Fetch and return available Ollama models"""
         return self.get_available_ollama_models()
+      

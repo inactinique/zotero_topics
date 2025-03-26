@@ -51,6 +51,8 @@ To use this mode:
    $env:ANTHROPIC_API_KEY="your_api_key_here"
    ```
 
+3. Alternatively, you can add the API key in the Welcome dialog when you start the application.
+
 ### 2. Ollama (Local Model)
 
 This option uses a local Ollama instance to run models on your own machine:
@@ -75,6 +77,24 @@ To use this mode:
 4. In the application:
    - Check the "Use local Ollama model" box
    - Select the model from the dropdown (default is llama3.2:3b)
+   - Adjust generation parameters as needed
+
+## Generation Parameters
+
+The application allows you to customize how responses are generated:
+
+- **Temperature** (0.0-1.0): Controls creativity and randomness
+  - Lower values (0.1-0.3): More factual, consistent responses
+  - Medium values (0.5-0.7): Balanced creativity and consistency
+  - Higher values (0.8-1.0): More creative, diverse responses
+
+- **Top-P** (0.1-1.0): Controls diversity by limiting token selection to the most probable ones
+  - Lower values focus responses more narrowly
+  - Higher values allow more diversity
+
+- **Top-K** (1-100): For Ollama only, limits token selection to the K most probable tokens
+  - Lower values make responses more predictable
+  - Higher values allow more flexibility
 
 ## Tips for Effective Questions
 
@@ -93,9 +113,9 @@ For best results, try questions like:
 Behind the scenes, the system:
 
 1. Breaks your PDFs into smaller chunks
-2. Creates vector embeddings for each chunk
+2. Creates an internal index of these chunks
 3. When you ask a question, it finds the most relevant chunks
-4. It then uses these chunks to generate an answer
+4. It then uses these chunks as context to generate an answer
 
 If you're using Anthropic's API, it will use Claude to generate higher quality answers. If you're using Ollama, it will use your local model for generating responses.
 
@@ -105,13 +125,13 @@ If you're using Anthropic's API, it will use Claude to generate higher quality a
 *Solution:* Processing time depends on the number and size of PDFs. Be patient with larger collections.
 
 **Issue: Poor quality answers**  
-*Solution:* Try using Anthropic API for better results or a larger Ollama model. Also, make your questions more specific.
+*Solution:* Try using Anthropic API for better results or a larger Ollama model. Also, make your questions more specific and try adjusting the generation parameters.
 
 **Issue: Missing information in answers**  
 *Solution:* The system can only answer based on information in your PDFs. If information is missing, it might not be in your documents.
 
 **Issue: Error regarding API key**  
-*Solution:* Check that you've correctly set the environment variable with your API key.
+*Solution:* Check that you've correctly set the environment variable with your API key or entered it in the Welcome dialog.
 
 **Issue: Can't connect to Ollama**  
 *Solution:* Make sure Ollama is running and the model you selected is downloaded. You can pull models with `ollama pull model_name`.
@@ -129,24 +149,21 @@ If you want to use different Ollama models:
    # Or any other model you prefer
    ```
 
-2. Select the model from the dropdown in the application
+2. Select the model from the dropdown in the application or use the refresh button to update the available models list
 
 For smaller computers, we recommend using smaller models like:
 - llama3.2:3b
 - gemma:2b
-- gemma2:2b
-- phi3:3b
+- phi3:3.8b
 
 For better quality responses on more capable hardware:
-- llama3.1:8b
-- mistral:7b
+- llama3.2:8b
+- gemma:7b
 - phi3:14b
 
-## For Developers
+## Privacy Considerations
 
-The RAG system is implemented in the `zotero_topic_modeling/rag` directory with these main components:
-
-- `chunk_processor.py`: Handles breaking documents into chunks
-- `embedder.py`: Creates and manages vector embeddings
-- `generator.py`: Generates responses using retrieved context
-- `rag_manager.py`: Coordinates the entire RAG pipeline
+- When using Claude API, your document content and questions are sent to Anthropic's servers
+- When using Ollama, all processing happens locally on your machine
+- The application doesn't permanently store your document content outside of the processing session
+- If privacy is a primary concern, use the Ollama option

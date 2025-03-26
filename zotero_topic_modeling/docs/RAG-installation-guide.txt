@@ -1,0 +1,129 @@
+# "Speak with your PDFs" Feature - Installation Guide
+
+This guide explains how to install and use the RAG (Retrieval-Augmented Generation) feature that allows you to ask questions about your PDF documents.
+
+## Installation Steps
+
+### 1. Update Dependencies
+
+Make sure you have all the required dependencies installed:
+
+```bash
+pip install -r requirements.txt
+```
+
+The RAG feature requires these key dependencies:
+- chromadb
+- sentence-transformers
+- faiss-cpu
+- keyring (for secure credential storage)
+- requests
+
+### 2. Optional: Install Ollama for Local Processing
+
+For privacy-focused users or those without an Anthropic API key, you can use local models with Ollama:
+
+1. Download and install Ollama from [ollama.com](https://ollama.com/)
+2. Pull a model of your choice:
+   ```bash
+   ollama pull llama3.2:3b  # Recommended for most users
+   ```
+3. Make sure Ollama is running when you use the application
+
+### 3. API Key Setup (Optional)
+
+The RAG feature works in two modes:
+- **Anthropic Claude**: Uses the Anthropic Claude API for high-quality responses
+- **Ollama**: Uses local models for private, on-device processing
+
+To use Anthropic Claude, you need an API key:
+
+1. Get an API key from [Anthropic's console](https://console.anthropic.com/)
+2. You can either:
+   - Enter it in the application's welcome dialog when prompted
+   - Set it as an environment variable:
+     ```bash
+     # On macOS/Linux
+     export ANTHROPIC_API_KEY=your_api_key_here
+     
+     # On Windows (Command Prompt)
+     set ANTHROPIC_API_KEY=your_api_key_here
+     
+     # On Windows (PowerShell)
+     $env:ANTHROPIC_API_KEY="your_api_key_here"
+     ```
+
+## Using the Feature
+
+1. Open the Zotero Topic Modeling application
+2. Connect to your Zotero account
+3. Select and process a collection as usual
+4. After processing is complete, click the "Speak with your PDFs" button
+5. A new chat window will open where you can ask questions about your PDFs
+6. If prompted, choose whether to use Anthropic Claude or Ollama
+
+### Customizing Generation Parameters
+
+The application allows you to adjust these parameters:
+
+- **Temperature** (0.0-1.0): Controls creativity vs. consistency
+- **Top-P** (0.1-1.0): Controls diversity of token selection
+- **Top-K** (1-100): For Ollama only, limits token selection to K most likely options
+
+Lower temperature values (0.1-0.3) provide more factual responses, while higher values (0.7-1.0) provide more creative responses.
+
+### Example Questions
+
+Here are some example questions you can ask:
+- "What are the main topics discussed in these documents?"
+- "Are there any locations mentioned in the documents?"
+- "What methodologies are discussed in these papers?"
+- "Summarize the key findings from these documents."
+- "Which authors are cited the most across these papers?"
+
+## How It Works
+
+The RAG (Retrieval-Augmented Generation) feature works in several steps:
+
+1. **Document Processing**: PDFs are broken into smaller chunks
+2. **Indexing**: The system creates an index of these chunks
+3. **Similarity Search**: When you ask a question, the system finds the most relevant chunks
+4. **Response Generation**: The system generates a response based on the retrieved information
+
+This approach ensures that responses are grounded in the actual content of your documents.
+
+## Troubleshooting
+
+If you encounter issues:
+
+1. **Processing takes too long**: 
+   - This is normal for large collections. The system needs to process all PDFs before you can start chatting.
+
+2. **Memory errors**:
+   - Try processing a smaller collection
+   - If using Ollama, try a smaller model like llama3.2:3b
+
+3. **Missing dependencies errors**:
+   - Run `pip install -r requirements.txt` to ensure all dependencies are installed
+   - If using Ollama, make sure it's installed and running
+
+4. **No valid PDF content error**:
+   - Ensure your PDFs contain actual text (not scanned images)
+   - Check that the PDFs are properly attached in Zotero
+
+5. **Can't connect to Ollama error**:
+   - Make sure Ollama is running
+   - Check if the model you selected is installed
+   - Try pulling the model again with `ollama pull model_name`
+
+6. **API key errors**:
+   - Check that your Anthropic API key is valid and correctly entered
+   - Try setting it as an environment variable instead of in the application
+
+## System Requirements
+
+- **RAM**: At least 8GB recommended, 16GB for comfortable use with Ollama
+- **Disk Space**: At least 8GB free for application and models
+- **CPU**: Multi-core processor recommended
+- **GPU**: Optional but helpful for Ollama models
+- **Internet**: Required for Anthropic API, optional for Ollama after model download
