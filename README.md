@@ -1,6 +1,6 @@
 # Zotero Topic Modeling - Installation Guide
 
-**This is a vibe coding experiment. Its aim is to setup a proof of concept. There is no guarantee coming with this piece of software**
+**This is a [vibe coding](https://en.wikipedia.org/wiki/Vibe_coding) experiment. Its aim is to setup a proof of concept. There is no guarantee coming with this piece of software**
 
 A Python application for analyzing your Zotero library using topic modeling and RAG (Retrieval-Augmented Generation) technology.
 
