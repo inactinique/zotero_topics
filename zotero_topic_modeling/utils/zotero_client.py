@@ -13,7 +13,30 @@ class ZoteroClient:
         return self.zot.collections()
     
     def get_collection_items(self, collection_key):
-        return self.zot.collection_items(collection_key)
+        """
+        Get all items from a collection, handling pagination
+        """
+        all_items = []
+        start = 0
+        limit = 100  # Zotero API typically uses 100 as maximum per request
+    
+        while True:
+            # Get a batch of items
+            batch = self.zot.collection_items(collection_key, start=start, limit=limit)
+            
+            if not batch:
+                break
+            
+            all_items.extend(batch)
+        
+        # If we got fewer items than the limit, we've reached the end
+            if len(batch) < limit:
+                break
+            
+        # Move to next batch
+            start += limit
+    
+        return all_items
     
     def get_item_pdfs(self, item):
         """

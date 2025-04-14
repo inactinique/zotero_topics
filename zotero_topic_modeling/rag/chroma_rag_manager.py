@@ -61,48 +61,79 @@ class ChromaRAGManager:
         ).start()
     
     def _process_documents_thread(self, documents, on_complete=None):
-        """Process and index documents using a simple approach"""
+        """Process documents in batches to reduce memory usage"""
         try:
-            logging.info(f"Processing {len(documents)} documents")
+            total_docs = len(documents)
+            logging.info(f"Starting to process {total_docs} documents")
             start_time = time.time()
-            
+        
             # Reset for new processing
             self.titles = []
             self.documents = []
             self.document_index = []
+        
+            # Define batch size - adjust based on your system's capabilities
+            BATCH_SIZE = 10
+        
+            # Process documents in batches
+            for batch_start in range(0, total_docs, BATCH_SIZE):
+                batch_end = min(batch_start + BATCH_SIZE, total_docs)
+                current_batch = documents[batch_start:batch_end]
+                
+                logging.info(f"Processing batch {batch_start//BATCH_SIZE + 1}: documents {batch_start+1} to {batch_end} (of {total_docs})")
             
-            for doc_idx, doc in enumerate(documents):
-                title = doc.get('title', 'Untitled Document')
-                text = doc.get('text', '')
+                # Process current batch
+                for doc_idx, doc in enumerate(current_batch):
+                    # Calculate the actual document index in the full collection
+                    global_doc_idx = batch_start + doc_idx
                 
-                # Store title
-                self.titles.append(title)
+                    title = doc.get('title', f'Untitled Document {global_doc_idx+1}')
+                    text = doc.get('text', '')
                 
-                if not text:
-                    logging.warning(f"Document '{title}' has no text content")
-                    continue
+                    # Store title
+                    self.titles.append(title)
                 
-                # Store the document
-                self.documents.append({
-                    'title': title,
-                    'text': text,
-                    'doc_idx': doc_idx
-                })
+                    if not text:
+                        logging.warning(f"Document '{title}' has no text content")
+                        continue
                 
-                # Create chunks for the document
-                chunks = self._chunk_document(text, title)
+                    # Store the document with global index
+                    self.documents.append({
+                        'title': title,
+                        'text': text,
+                        'doc_idx': global_doc_idx
+                    })
                 
-                # Add chunks to document index
-                self.document_index.extend(chunks)
+                    # Create chunks for the document
+                    chunks = self._chunk_document(text, title)
+                    
+                    # Add chunks to document index
+                    self.document_index.extend(chunks)
+                
+                    # Log progress
+                    logging.info(f"Processed document {global_doc_idx+1}/{total_docs}: '{title}' - {len(chunks)} chunks created")
             
+                # Force garbage collection after each batch
+                import gc
+                gc.collect()
+            
+                # Log memory usage if psutil is available
+                try:
+                    import psutil
+                    process = psutil.Process(os.getpid())
+                    memory_mb = process.memory_info().rss / 1024 / 1024
+                    logging.info(f"Memory usage after batch: {memory_mb:.2f} MB")
+                except ImportError:
+                    pass
+        
             self.ready = True
             elapsed_time = time.time() - start_time
-            logging.info(f"Indexing completed in {elapsed_time:.2f}s. {len(self.document_index)} chunks indexed")
-            
+            logging.info(f"Indexing completed in {elapsed_time:.2f}s. {len(self.document_index)} chunks indexed from {len(self.documents)} documents")
+        
             # Call completion callback
             if on_complete:
                 on_complete(True)
-                
+            
         except Exception as e:
             logging.error(f"Error processing documents: {str(e)}")
             if on_complete:
